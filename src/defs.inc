@@ -6,6 +6,13 @@
 KBD     := $C000                ; keyboard data (high bit = key ready)
 KBDSTRB := $C010                ; clear keyboard strobe
 HOME    := $FC58                ; clear text screen, cursor home
+REBOOT  := $C600                ; slot-6 disk boot ROM. ^Q reboots:
+                                ; DOS can't survive a return from a
+                                ; BRUN program that ran file commands
+                                ; (its pending-command state is gone
+                                ; and both RTS and the $3D0 warm entry
+                                ; wedge in RWTS), so like most period
+                                ; application disks we restart instead.
 
 ; --- zero page (DOS 3.3 + Monitor safe cells) ----------------------
 LINEP   = $06                   ; 2 bytes: base address of cursor row

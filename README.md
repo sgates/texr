@@ -43,7 +43,14 @@ scrolling window into it, so files can be four screens tall. See
                       get a blank row above and below to set them off;
                       h1 ("# ") is also rendered bold by double-striking
                       each glyph one pixel apart
-    ^Q            quit to DOS
+    ^S / ^O       save / open the document as a plain DOS 3.3 text
+                  file (readable markdown on disk): filename prompt on
+                  the status row, RETURN accepts, ESC cancels. Errors
+                  show "DISK ERROR n" and return to the editor; a
+                  missing file is detected before anything is touched
+    ^Q            quit: reboots the disk (after file I/O, DOS 3.3
+                  cannot survive a BRUN program returning, so texr
+                  restarts like most period application disks)
     printables    insert (shifts the rest of the line right)
 
 ## Layout
@@ -68,6 +75,8 @@ scrolling window into it, so files can be four screens tall. See
     src/font.s            5x7 font as editable # art, ASCII $20-$5F
     src/demo.s            bundled demo document, loaded by ^D on an
                           empty document (see splash screen hint)
+    src/disk.s            ^S/^O DOS 3.3 text-file save/load, with a
+                          patch-trap on DOS's error handler
     disks/template.dsk    bootable DOS 3.3 template (copied from System Master)
     tools/                AppleCommander CLI jar (downloaded by bootstrap)
     build/                outputs: texr.bin, texr.lst, texr.dsk
@@ -80,6 +89,10 @@ scrolling window into it, so files can be four screens tall. See
 The generated `build/texr.dsk` boots DOS 3.3 and its `HELLO` greeting does
 `BRUN TEXR`, so the program runs automatically at power-on. The same image
 can be transferred to a real floppy with ADTPro.
+
+Note: `bin/build.sh` recreates `build/texr.dsk` from the template, so
+documents saved with ^S live only until the next build. Copy the .dsk
+(or ADTPro it to a real floppy) to keep them.
 
 ## Memory notes
 

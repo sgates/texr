@@ -59,16 +59,22 @@ edloop: jsr     upd_status
 :       cmp     #$84            ; ^D delete
         bne     :+
         jmp     do_del
-:       cmp     #$91            ; ^Q quit
+:       cmp     #$91            ; ^Q quit: reboot the disk
         bne     :+
         jsr     HOME
-        rts
+        jmp     REBOOT
 :       cmp     #$90            ; ^P hi-res preview
         bne     :+
         jmp     do_prev
 :       cmp     #$8E            ; ^N toggle line numbers
         bne     :+
         jmp     do_gut
+:       cmp     #$93            ; ^S save to disk
+        bne     :+
+        jmp     do_save
+:       cmp     #$8F            ; ^O open from disk
+        bne     :+
+        jmp     do_load
 :       cmp     #$9B            ; ESC opens help
         bne     :+
         jmp     do_help
@@ -621,8 +627,10 @@ help_items:
         .word   hlp_kp
         .byte   13,  6, hlp_kn - hlp_k5
         .word   hlp_k5
-        .byte   14,  6, hlp_m1 - hlp_kn
+        .byte   14,  6, hlp_ks - hlp_kn
         .word   hlp_kn
+        .byte   15,  6, hlp_m1 - hlp_ks
+        .word   hlp_ks
         .byte   16,  6, hlp_ml - hlp_m1
         .word   hlp_m1
         .byte   17,  6, hlp_esc - hlp_ml
@@ -651,6 +659,7 @@ hlp_k4: htext   "^D        BACKSPACE / JOIN"
 hlp_kp: htext   "^P        HI-RES PREVIEW"
 hlp_k5: htext   "^Q        QUIT TO DOS"
 hlp_kn: htext   "^N        LINE NUMBERS ON/OFF"
+hlp_ks: htext   "^S / ^O   SAVE / LOAD FILE"
 hlp_m1: htext   "--- ===   AUTO-FILL RULE LINE"
 hlp_ml: htext   "- OR *    LISTS AUTO-CONTINUE"
 hlp_esc:

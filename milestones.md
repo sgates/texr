@@ -61,9 +61,17 @@ becomes a scrolling 23-row window. Unlocks everything below.
       at columns 3-39 while on, so the last 3 columns are hidden.
       Display-only: the buffer stays full-width and typing/cursor
       logic is untouched (cursor draw pins to the right edge).
-- [ ] **M15 — Disk save/load** — ^S save / ^O open as plain DOS 3.3
-      text files (readable markdown on disk), filename prompt on the
-      status row, trailing spaces stripped, long lines wrapped on load.
+- [x] **M15 — Disk save/load** (Jul 2026) — ^S save / ^O open as plain
+      DOS 3.3 text files (readable markdown on disk), filename prompt
+      on the status row, trailing spaces stripped, blank lines kept,
+      long lines hard-wrapped and lowercase folded on load. DOS errors
+      are trapped by patching the DOS 3.3 error entry ($A6D2) during
+      disk ops: END OF DATA ends a load normally, anything else shows
+      "DISK ERROR n - PRESS ANY KEY" and returns to the editor.
+      Consequence: ^Q now reboots the disk instead of exiting to
+      BASIC — DOS can't survive a return from a BRUN program once
+      file commands have run (verified: both RTS and the $3D0 warm
+      entry wedge in RWTS).
 
 ## Backlog / ideas
 
