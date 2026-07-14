@@ -1,5 +1,7 @@
 # texr
 
+![Screenshot](images/texr.png)
+
 **[&#128214; User Manual](MANUAL.md)** — the full guide, written in
 period style (and in markdown, naturally).
 
