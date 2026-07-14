@@ -5,6 +5,8 @@
 
 banner_show:
         jsr     HOME
+        lda     #0              ; draw to the screen, not the buffer
+        sta     DITGT
         lda     #<items
         sta     ITEMP
         lda     #>items
@@ -34,6 +36,8 @@ items:  .byte    2,  7, 26
         .word   sub_key
         .byte   21, 11, 18
         .word   sub_help
+        .byte   22, 10, sub_demo_end - sub_demo
+        .word   sub_demo
         .byte   $FF
 
 ; --- TEXR in a 5x5 block font, letters 2 cols apart ----------------
@@ -57,3 +61,6 @@ sub_key:
         ftext   "PRESS ANY KEY TO BEGIN"
 sub_help:
         htext   "PRESS ESC FOR HELP"
+sub_demo:
+        htext   "PRESS ^D FOR A DEMO"
+sub_demo_end:

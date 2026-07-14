@@ -18,6 +18,14 @@ SRCP    = $1C                   ; 2 bytes: draw_items copy source
 TMP2    = $1E                   ; scratch (draw_items table index)
 HLAST   = $1F                   ; hi-res render: last non-space column
 HBOLD   = $E3                   ; bit 7 set: double-strike glyphs (h1)
+ORROW   = $E4                   ; hi-res render: output row (0-23),
+                                ;   decoupled from CURROW for spacing
+RSTEP   = $E5                   ; hi-res render: rows ORROW advances by
+TOPLN   = $E6                   ; document line shown on screen row 0
+DITGT   = $E7                   ; draw_items target: 0 = screen rows,
+                                ;   else document buffer lines
+SCRP    = $E8                   ; 2 bytes: cursor row's screen base
+                                ;   (LINEP now points into the buffer)
 DSTP    = $CE                   ; 2 bytes: screen save/restore pointer
 FONTP   = DSTP                  ; 2 bytes: glyph source (never live at
                                 ;   the same time as a modal save)
@@ -25,9 +33,12 @@ ITEMP   = $EB                   ; 2 bytes: draw_items layout table
 HPTR    = $ED                   ; 2 bytes: hi-res draw pointer
 HCOL    = $EF                   ; hi-res render column
 
-; --- buffers --------------------------------------------------------
-SCRBUF  = $5800                 ; 920 bytes: saved screen under modals
-                                ; (below the program's ORG at $6000)
+; --- document buffer -------------------------------------------------
+; Fixed 40-byte line records holding screen codes, space-padded, so a
+; screen row refresh is a straight copy. The text page is only a view.
+DOCBUF   = $4000                ; 99 lines x 40 = 3,960 bytes ($4F78)
+DOCLINES = 99                   ; 2-digit line numbers, LC can raise it
+TOPMAX   = DOCLINES - 23        ; highest TOPLN (23 view rows)
 
 ; --- screen layout -------------------------------------------------
 MAXROW  = 22                    ; last editable row; row 23 is status

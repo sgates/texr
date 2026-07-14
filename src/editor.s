@@ -1,8 +1,11 @@
 ; ===================================================================
-; editor.s — milestone 1: full-screen editing, screen-as-buffer
+; editor.s — buffered editing with a scrolling window (M12)
 ;
-; Rows 0-22 are the document (the text page IS the buffer for now);
+; The document lives in DOCBUF (99 fixed 40-byte lines of screen
+; codes); screen rows 0-22 are a window starting at line TOPLN, and
 ; row 23 is an inverse status bar with live line/column readout.
+; LINEP points at the cursor's buffer line, SCRP at its screen row;
+; edits go to the buffer and blitline repaints the row.
 ;
 ; Keys:  printables insert (shift right within the line)
 ;        RETURN new line       left/right arrows move
@@ -23,7 +26,13 @@ editor_run:
         lda     #0
         sta     CURCOL
         sta     CURROW
+        sta     TOPLN
+        jsr     docinit
         jsr     setline
+        lda     KEYCH           ; ^D on the splash: straight to the demo
+        cmp     #$84
+        bne     edloop
+        jmp     load_demo
 
 edloop: jsr     upd_status
         jsr     cursor_on
@@ -79,6 +88,7 @@ do_char:
         jmp     @shift
 @store: lda     KEYCH
         sta     (LINEP),y
+        jsr     blitline
         inc     CURCOL
         lda     CURCOL
         cmp     #40
@@ -112,6 +122,7 @@ do_char:
         iny
         cpy     #40
         bne     @fill
+        jsr     blitline
         jsr     crlf
 @out:   jmp     edloop
 
@@ -141,6 +152,7 @@ do_cr:  ldy     #0
         sta     (LINEP),y
         dey
         sta     (LINEP),y
+        jsr     blitline
 @plain: jsr     crlf
         jmp     edloop
 @cont:  ldy     #0              ; remember which marker
@@ -159,6 +171,7 @@ do_cr:  ldy     #0
         iny
         lda     #$A0
         sta     (LINEP),y
+        jsr     blitline
         lda     #2
         sta     CURCOL
 @done:  jmp     edloop
@@ -168,10 +181,17 @@ do_left:
         beq     @prev
         dec     CURCOL
         jmp     edloop
-@prev:  lda     CURROW          ; col 0: hop to end of previous row
-        beq     @stay
+@prev:  lda     CURROW          ; col 0: hop to end of previous line
+        beq     @scrl
         dec     CURROW
         jsr     setline
+        lda     #39
+        sta     CURCOL
+        jmp     edloop
+@scrl:  lda     TOPLN           ; row 0: scroll the window up
+        beq     @stay
+        dec     TOPLN
+        jsr     redraw
         lda     #39
         sta     CURCOL
 @stay:  jmp     edloop
@@ -186,24 +206,36 @@ do_right:
         jmp     edloop
 
 do_up:  lda     CURROW
-        beq     :+
+        beq     @top
         dec     CURROW
         jsr     setline
+        jmp     edloop
+@top:   lda     TOPLN           ; row 0: scroll the window up
+        beq     :+
+        dec     TOPLN
+        jsr     redraw
 :       jmp     edloop
 
 do_down:
         lda     CURROW
         cmp     #MAXROW
-        bcs     :+
+        bcs     @bot
         inc     CURROW
         jsr     setline
+        jmp     edloop
+@bot:   lda     TOPLN           ; row 22: scroll the window down
+        cmp     #TOPMAX
+        bcs     :+
+        inc     TOPLN
+        jsr     redraw
 :       jmp     edloop
 
 ; --- help modal ------------------------------------------------------
+; The modal draws straight over the window; closing just repaints the
+; window from the buffer — no save/restore needed anymore.
 do_help:
-        lda     CURROW          ; draw_items steers by CURROW; keep ours
-        pha
-        jsr     scr_save
+        lda     #0
+        sta     DITGT
         lda     #<help_items
         sta     ITEMP
         lda     #>help_items
@@ -212,69 +244,23 @@ do_help:
 @wait:  jsr     getkey
         cmp     #$9B            ; ESC closes
         bne     @wait
-        jsr     scr_restore
-        pla
-        sta     CURROW
-        jsr     setline
+        jsr     redraw
         jmp     edloop
 
-scr_save:                       ; document rows 0-22 -> SCRBUF
-        lda     #<SCRBUF
-        sta     DSTP
-        lda     #>SCRBUF
-        sta     DSTP+1
-        ldx     #0
-@row:   lda     rowlo,x
-        sta     LINEP
-        lda     rowhi,x
-        sta     LINEP+1
-        ldy     #39
-@col:   lda     (LINEP),y
-        sta     (DSTP),y
-        dey
-        bpl     @col
-        lda     DSTP            ; DSTP += 40
-        clc
-        adc     #40
-        sta     DSTP
-        bcc     :+
-        inc     DSTP+1
-:       inx
-        cpx     #23
-        bne     @row
-        rts
-
-scr_restore:                    ; SCRBUF -> document rows 0-22
-        lda     #<SCRBUF
-        sta     DSTP
-        lda     #>SCRBUF
-        sta     DSTP+1
-        ldx     #0
-@row:   lda     rowlo,x
-        sta     LINEP
-        lda     rowhi,x
-        sta     LINEP+1
-        ldy     #39
-@col:   lda     (DSTP),y
-        sta     (LINEP),y
-        dey
-        bpl     @col
-        lda     DSTP            ; DSTP += 40
-        clc
-        adc     #40
-        sta     DSTP
-        bcc     :+
-        inc     DSTP+1
-:       inx
-        cpx     #23
-        bne     @row
-        rts
-
 ; --- backspace: delete char left of cursor, pull line left ----------
-; Typing immediately after lands where the deleted text was.
+; Typing immediately after lands where the deleted text was. On a
+; pristine (0,0, all-blank) document, ^D instead loads the bundled
+; demo — see src/demo.s.
 do_del: lda     CURCOL
         bne     :+
-        jmp     edloop          ; nothing left of col 0 (line join TBD)
+        lda     CURROW          ; nothing left of col 0 (line join: M13)
+        ora     TOPLN           ; demo only at the true document top
+        bne     @noop
+        jsr     is_doc_empty
+        beq     @fix
+        jmp     load_demo
+@fix:   jsr     setline         ; is_doc_empty walked LINEP
+@noop:  jmp     edloop
 :       dec     CURCOL
         ldy     CURCOL
 @pull:  cpy     #39
@@ -287,6 +273,7 @@ do_del: lda     CURCOL
         jmp     @pull
 @last:  lda     #$A0
         sta     (LINEP),y
+        jsr     blitline
         jmp     edloop
 
 ; --- helpers ---------------------------------------------------------
@@ -294,27 +281,73 @@ crlf:   lda     #0
         sta     CURCOL
         lda     CURROW
         cmp     #MAXROW
-        bcs     :+
+        bcs     @bot
         inc     CURROW
+        jmp     setline
+@bot:   lda     TOPLN           ; bottom row: scroll the window down
+        cmp     #TOPMAX
+        bcs     :+
+        inc     TOPLN
+        jmp     redraw          ; redraw ends in setline
 :       jmp     setline
 
-cursor_on:                      ; show cursor: invert the cell
-        ldy     CURCOL
-        lda     (LINEP),y
+blitline:                       ; repaint the cursor row from its line
+        ldy     #39
+@col:   lda     (LINEP),y
+        sta     (SCRP),y
+        dey
+        bpl     @col
+        rts
+
+redraw:                         ; repaint the whole window from TOPLN
+        lda     CURROW
+        pha
+        lda     #0
+        sta     CURROW
+@row:   jsr     setline
+        jsr     blitline
+        inc     CURROW
+        lda     CURROW
+        cmp     #23
+        bne     @row
+        pla
+        sta     CURROW
+        jmp     setline
+
+docinit:                        ; blank the whole document buffer
+        lda     #<DOCBUF
+        sta     DSTP
+        lda     #>DOCBUF
+        sta     DSTP+1
+        ldx     #16             ; 16 pages covers 99 x 40 bytes
+        lda     #$A0
+        ldy     #0
+@fill:  sta     (DSTP),y
+        iny
+        bne     @fill
+        inc     DSTP+1
+        dex
+        bne     @fill
+        rts
+
+cursor_on:                      ; show cursor: invert the screen cell
+        ldy     CURCOL          ; (display only; the buffer keeps the
+        lda     (SCRP),y        ;  real character)
         sta     SAVCHR
         and     #$3F
-        sta     (LINEP),y
+        sta     (SCRP),y
         rts
 
 cursor_off:                     ; restore what was under it
         ldy     CURCOL
         lda     SAVCHR
-        sta     (LINEP),y
+        sta     (SCRP),y
         rts
 
 upd_status:                     ; live LN/COL readout (1-based)
-        lda     CURROW
+        lda     TOPLN
         clc
+        adc     CURROW
         adc     #1
         ldx     #26             ; LN digits at status cols 26-27
         jsr     puts2
@@ -380,8 +413,10 @@ help_items:
         .word   hlp_ml
         .byte   17,  6, hlp_esc - hlp_m2
         .word   hlp_m2
-        .byte   18, 14, hlp_end - hlp_esc
+        .byte   18, 14, hlp_esc_end - hlp_esc
         .word   hlp_esc
+        .byte   19,  6, hlp_end - hlp_dm
+        .word   hlp_dm
         .byte   $FF
 
 boxtop: .repeat 34              ; solid inverse bar
@@ -406,4 +441,6 @@ hlp_ml: htext   "- OR *    LISTS AUTO-CONTINUE"
 hlp_m2: htext   "TYPING INSERTS AT THE CURSOR"
 hlp_esc:
         ftext   " ESC CLOSES "
+hlp_esc_end:
+hlp_dm: htext   "^D ON BLANK DOC LOADS DEMO"
 hlp_end:

@@ -9,6 +9,7 @@
 main:   bit     KBDSTRB         ; discard any pending boot keypress
         jsr     banner_show
         jsr     getkey
+        sta     KEYCH           ; ^D dismissing the splash loads the demo
         jsr     editor_run
         rts                     ; back to the DOS prompt
 
@@ -21,19 +22,33 @@ getkey: lda     KBD             ; wait for a key, return it in A
 
 ; Render a layout table at (ITEMP): records of row, col, len, source
 ; address, terminated by row = $FF. Later records draw over earlier.
+; DITGT picks the target: 0 = screen rows (banner, modals), else
+; document buffer lines (the demo loader).
 draw_items:
         ldy     #0
 @item:  lda     (ITEMP),y       ; row, or $FF end marker
         cmp     #$FF
         beq     @done
-        sta     CURROW
-        jsr     setline
-        iny
+        tax
+        lda     DITGT
+        beq     @scr
+        lda     buflo,x
+        sta     LINEP
+        lda     bufhi,x
+        sta     LINEP+1
+        jmp     @col
+@scr:   lda     rowlo,x
+        sta     LINEP
+        lda     rowhi,x
+        sta     LINEP+1
+@col:   iny
         lda     (ITEMP),y       ; column
         clc
-        adc     LINEP           ; row base low bytes never carry (+39 max)
+        adc     LINEP
         sta     LINEP
-        iny
+        bcc     :+
+        inc     LINEP+1         ; buffer lines can straddle pages
+:       iny
         lda     (ITEMP),y       ; length
         sta     TMP
         iny
@@ -54,16 +69,20 @@ draw_items:
         jmp     @item
 @done:  rts
 
-setline:                        ; point LINEP at CURROW's screen base
-        txa                     ; preserve X (banner_show indexes with it)
-        pha
-        ldx     CURROW
+setline:                        ; LINEP = buffer line TOPLN+CURROW,
+        ldx     CURROW          ; SCRP = CURROW's screen row base
         lda     rowlo,x
-        sta     LINEP
+        sta     SCRP
         lda     rowhi,x
-        sta     LINEP+1
-        pla
+        sta     SCRP+1
+        txa
+        clc
+        adc     TOPLN
         tax
+        lda     buflo,x
+        sta     LINEP
+        lda     bufhi,x
+        sta     LINEP+1
         rts
 
 ; Text page 1 row bases: $400 + (row mod 8)*$80 + (row div 8)*$28
@@ -74,7 +93,16 @@ rowhi:  .repeat 24, r
         .byte   >($0400 + (r .mod 8) * $80 + (r / 8) * $28)
         .endrep
 
+; Document buffer line bases: DOCBUF + line * 40
+buflo:  .repeat DOCLINES, r
+        .byte   <(DOCBUF + r * 40)
+        .endrep
+bufhi:  .repeat DOCLINES, r
+        .byte   >(DOCBUF + r * 40)
+        .endrep
+
         .include "banner.s"
         .include "editor.s"
         .include "hgr.s"
         .include "font.s"
+        .include "demo.s"

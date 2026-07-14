@@ -1,10 +1,11 @@
 ; ===================================================================
 ; hgr.s — hi-res markdown preview (milestone 1: plain text)
 ;
-; ^P renders the document to the 280x192 hi-res screen with a 5x7
-; software font (7x8 cells = 40x24 chars) and flips to graphics;
-; ESC flips back to text mode. Hi-res page 1 ($2000-$3FFF) is a
-; separate memory page, so the text screen needs no save/restore.
+; ^P renders the visible window (buffer lines TOPLN..TOPLN+22) to the
+; 280x192 hi-res screen with a 5x7 software font (7x8 cells = 40x24
+; chars) and flips to graphics; ESC flips back to text mode. Hi-res
+; page 1 ($2000-$3FFF) is a separate memory page, so the text screen
+; needs no save/restore.
 ; ===================================================================
 
 ; --- display soft switches ------------------------------------------
@@ -30,6 +31,8 @@ do_prev:
         jsr     hgr_clear
         lda     #0
         sta     CURROW
+        sta     ORROW           ; output row; render_line advances it,
+                                ;   with extra room around headings
 @row:   jsr     setline
         jsr     render_line
         inc     CURROW
@@ -50,12 +53,22 @@ do_prev:
         jmp     edloop
 
 ; --- render one document line with markdown semantics ---------------
-; LINEP/CURROW select the line. Rules become pixel lines, "- "/"* "
-; become dotted bullets, "# " headings drop the marker and underline.
+; LINEP selects the source line; ORROW selects the output row (its
+; own cursor, since headings consume extra rows for whitespace).
+; Rules become pixel lines, "- "/"* " become indented dotted bullets,
+; "# " headings drop the marker, underline, and get a blank row after
+; (and before, if something is already above) so they don't touch
+; neighboring text.
 render_line:
         lda     #0
         sta     HBOLD
-        ldy     #0
+        lda     #1              ; default: this row only
+        sta     RSTEP
+        lda     ORROW           ; off the bottom of the screen?
+        cmp     #24
+        bcc     :+
+        rts
+:       ldy     #0
         lda     (LINEP),y
         cmp     #RDASH
         beq     @dash
@@ -68,7 +81,8 @@ render_line:
 @plain: lda     #0              ; ordinary text, rendered in place
         sta     TMP
         sta     TMP2
-        jmp     render_text
+        jsr     render_text
+        jmp     @done
 
 @dash:  ldy     #1              ; "- " bullet, "---" rule, else text
         lda     (LINEP),y
@@ -82,7 +96,8 @@ render_line:
         bne     @plain
         lda     #39             ; --- : single full-width rule
         ldx     #3
-        jmp     hline
+        jsr     hline
+        jmp     @done
 
 @equals:
         ldy     #1              ; "===" rule, else text
@@ -98,21 +113,24 @@ render_line:
         jsr     hline
         lda     #39
         ldx     #4
-        jmp     hline
+        jsr     hline
+        jmp     @done
 
 @star:  ldy     #1              ; "* " is a bullet too
         lda     (LINEP),y
         cmp     #RSPC
         bne     @plain
 @bullet:
-        lda     #0              ; dot at the margin, gap, text at col 2
+        lda     #2              ; indent: dot at col 2, text at col 4
         sta     HCOL
         lda     #BULLET
         jsr     draw_idx
-        lda     #2              ; item text stays in place
+        lda     #2              ; source: skip the "- "/"* " marker
         sta     TMP
+        lda     #4              ; dest: item text starts past the indent
         sta     TMP2
-        jmp     render_text
+        jsr     render_text
+        jmp     @done
 
 @hash:  ldy     #0              ; count leading #s (max 6)
 @cnt:   lda     (LINEP),y
@@ -129,14 +147,30 @@ render_line:
         bne     :+
         lda     #$80
         sta     HBOLD
-:       iny                     ; skip the space
+:       lda     ORROW           ; blank row above, unless at the top
+        beq     @hspace
+        inc     ORROW
+        lda     ORROW
+        cmp     #24             ; ran off the screen leaving room?
+        bcc     @hspace
+        rts
+@hspace:
+        iny                     ; skip the "# " marker's space
         sty     TMP             ; text starts here...
         lda     #0
         sta     TMP2            ; ...and renders at the left margin
         jsr     render_text
         lda     HLAST           ; underline to the last glyph drawn
         ldx     #7
-        jmp     hline
+        jsr     hline
+        lda     #2              ; and a blank row below
+        sta     RSTEP
+
+@done:  lda     ORROW
+        clc
+        adc     RSTEP
+        sta     ORROW
+        rts
 
 ; --- copy chars TMP..39 of the line to dest cols from TMP2 ----------
 ; Tracks the last non-space destination column in HLAST.
@@ -160,13 +194,13 @@ render_text:
 @done:  rts
 
 ; --- horizontal pixel line -------------------------------------------
-; Scanline X (0-7) of char row CURROW, cols 0 through A inclusive.
+; Scanline X (0-7) of output row ORROW, cols 0 through A inclusive.
 hline:  sta     TMP
         txa
         asl     a
         asl     a               ; scanline -> hi-byte offset (*$400)
         sta     TMP2
-        ldx     CURROW
+        ldx     ORROW
         lda     hgrlo,x
         sta     HPTR
         lda     hgrhi,x
@@ -181,7 +215,7 @@ hline:  sta     TMP
         rts
 
 ; --- draw one glyph --------------------------------------------------
-; A = text screen code; cell = (CURROW, HCOL). Clobbers A, X, Y.
+; A = text screen code; cell = (ORROW, HCOL). Clobbers A, X, Y.
 draw_glyph:
         and     #$7F            ; normal screen code -> ASCII
         cmp     #$20
@@ -214,7 +248,7 @@ draw_idx:
         lda     FONTP+1
         adc     #>font
         sta     FONTP+1
-        ldx     CURROW          ; HPTR = cell's first scanline
+        ldx     ORROW           ; HPTR = cell's first scanline
         lda     hgrlo,x
         clc
         adc     HCOL            ; row base low bytes never carry (+39 max)
