@@ -73,8 +73,16 @@ becomes a scrolling 23-row window. Unlocks everything below.
       file commands have run (verified: both RTS and the $3D0 warm
       entry wedge in RWTS).
 
+- [x] **M16 — File picker + .MD extension** (Jul 2026) — ^S appends
+      ".MD" to saved names so texr documents are self-identifying;
+      ^O opens a modal picker that reads the DOS 3.3 catalog directly
+      with RWTS (track $11 chain, TEXT files ending ".MD" only, up to
+      13 shown), highlight moves with ^J/^K or arrows, RETURN loads,
+      1 / 2 switch drives, ESC cancels.
+
 ## Backlog / ideas
 
+- Pre-load disks/data.dsk with sample markdown documents
 - Smart wrap: typing past column 39 should split/flow onto the next
   line instead of just hopping the cursor down
 

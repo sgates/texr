@@ -659,7 +659,7 @@ hlp_k4: htext   "^D        BACKSPACE / JOIN"
 hlp_kp: htext   "^P        HI-RES PREVIEW"
 hlp_k5: htext   "^Q        QUIT TO DOS"
 hlp_kn: htext   "^N        LINE NUMBERS ON/OFF"
-hlp_ks: htext   "^S / ^O   SAVE / LOAD FILE"
+hlp_ks: htext   "^S / ^O   SAVE / PICK+LOAD .MD"
 hlp_m1: htext   "--- ===   AUTO-FILL RULE LINE"
 hlp_ml: htext   "- OR *    LISTS AUTO-CONTINUE"
 hlp_esc:

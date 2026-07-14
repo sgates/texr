@@ -107,3 +107,4 @@ bufhi:  .repeat DOCLINES, r
         .include "font.s"
         .include "demo.s"
         .include "disk.s"
+        .include "catalog.s"

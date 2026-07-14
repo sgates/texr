@@ -26,7 +26,8 @@ do_save:
         jsr     fname_prompt
         bcc     :+
         jmp     edloop          ; cancelled
-:       tsx                     ; trap restores the stack to here
+:       jsr     add_md          ; texr documents are NAME.MD
+        tsx                     ; trap restores the stack to here
         stx     SAVSP
         jsr     trap_on
         lda     #$8D            ; known start-of-line for the first ^D
@@ -43,7 +44,7 @@ do_save:
         lda     #<c_open
         ldy     #>c_open
         jsr     doscmd
-        ldx     #1
+        ldx     #2              ; WRITE takes no drive suffix
         lda     #<c_write
         ldy     #>c_write
         jsr     doscmd
@@ -102,14 +103,11 @@ do_save:
         jsr     redraw          ; the first CR may have scrolled
         jmp     edloop
 
-; --- ^O: load a document ---------------------------------------------
-do_load:
+; --- load: entered from the ^O picker with FNBUF/FNLEN/FNCUT set ----
+load_go:
         lda     #1
         sta     DMODE
-        jsr     fname_prompt
-        bcc     :+
-        jmp     edloop          ; cancelled
-:       tsx
+        tsx
         stx     SAVSP
         jsr     trap_on
         lda     #$8D
@@ -122,7 +120,7 @@ do_load:
         lda     #<c_open
         ldy     #>c_open
         jsr     doscmd
-        ldx     #1
+        ldx     #2              ; READ takes no drive suffix
         lda     #<c_read
         ldy     #>c_read
         jsr     doscmd
@@ -235,7 +233,10 @@ dos_close:                      ; ctrl-D CLOSE, safe when nothing open
         jmp     doscmd
 
 ; --- command channel --------------------------------------------------
-; Emit ctrl-D + prefix (A/Y, null-terminated) + filename if X + CR.
+; Emit ctrl-D + prefix (A/Y, null-terminated) + filename + CR.
+; X picks the filename form: 0 = none (CLOSE), 1 = as typed (OPEN /
+; DELETE / VERIFY accept a ",D2" drive suffix), 2 = up to the comma
+; (READ / WRITE reject drive params; they find the open file by name).
 ; Every command and every data line ends in CR, so the next ctrl-D is
 ; always at the start of a line, which is what DOS's intercept needs.
 doscmd: sta     SRCP
@@ -253,8 +254,14 @@ doscmd: sta     SRCP
         bne     @pfx
 @fn:    lda     TMP4
         beq     @cr
+        cmp     #2
+        bne     :+
+        lda     FNCUT           ; bare name only
+        bne     @go
+:       lda     FNLEN           ; name as typed
+@go:    sta     TMP4
         ldy     #0
-@f:     cpy     FNLEN
+@f:     cpy     TMP4
         beq     @cr
         lda     FNBUF,y
         sty     TMP3
@@ -297,10 +304,8 @@ fname_prompt:
         beq     @rub
         cmp     #$88            ; so does left arrow
         beq     @rub
-        cmp     #$A0            ; printable only
-        bcc     @key
-        cmp     #$AC            ; comma ends a DOS command: reject
-        beq     @key
+        cmp     #$A0            ; printable only (comma allowed: a
+        bcc     @key            ; ",D2" suffix picks drive 2)
         ldx     FNLEN
         cpx     #20             ; name length cap
         bcs     @key
@@ -318,6 +323,15 @@ fname_prompt:
         bne     @key
 @done:  lda     FNLEN
         beq     @cancel         ; empty name = cancel
+        ldx     #0              ; FNCUT = name length up to a ","
+@cut:   cpx     FNLEN
+        beq     @cok
+        lda     FNBUF,x
+        cmp     #$AC
+        beq     @cok
+        inx
+        bne     @cut
+@cok:   stx     FNCUT
         clc
         rts
 @cancel:
@@ -332,6 +346,44 @@ stat_restore:                   ; static status bar back on row 23
         dey
         bpl     @sb
         rts
+
+; --- append ".MD" to the bare name unless it already ends in it ------
+add_md: lda     FNCUT
+        cmp     #3
+        bcc     @ins
+        ldx     FNCUT
+        lda     FNBUF-3,x
+        cmp     #$AE            ; "."
+        bne     @ins
+        lda     FNBUF-2,x
+        cmp     #$CD            ; "M"
+        bne     @ins
+        lda     FNBUF-1,x
+        cmp     #$C4            ; "D"
+        beq     @done
+@ins:   ldy     FNLEN           ; shift any ",Dn" tail right 3
+@sh:    cpy     FNCUT
+        beq     @put
+        dey
+        lda     FNBUF,y
+        sta     FNBUF+3,y
+        jmp     @sh
+@put:   ldx     FNCUT
+        lda     #$AE
+        sta     FNBUF,x
+        lda     #$CD
+        sta     FNBUF+1,x
+        lda     #$C4
+        sta     FNBUF+2,x
+        lda     FNLEN
+        clc
+        adc     #3
+        sta     FNLEN
+        lda     FNCUT
+        clc
+        adc     #3
+        sta     FNCUT
+@done:  rts
 
 ; --- data -------------------------------------------------------------
 c_open:  htext  "OPEN "
@@ -354,8 +406,10 @@ p_load: itext   "LOAD: "
 dmsg:   itext   " DISK ERROR    - PRESS ANY KEY          "
         .assert * - dmsg = 40, error, "disk error row must be 40 chars"
 
-FNBUF:  .res    20              ; filename (high-bit ASCII)
+FNBUF:  .res    28              ; file spec (high-bit ASCII); room for
+                                ;   a 24-char name + ",Dn"
 FNLEN:  .res    1
+FNCUT:  .res    1               ; length up to any "," (bare name)
 DMODE:  .res    1               ; 0 = saving, 1 = loading
 SAVSP:  .res    1               ; stack pointer at operation start
 ERRCD:  .res    1               ; DOS error code from the trap

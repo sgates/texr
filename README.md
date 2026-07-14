@@ -43,11 +43,16 @@ scrolling window into it, so files can be four screens tall. See
                       get a blank row above and below to set them off;
                       h1 ("# ") is also rendered bold by double-striking
                       each glyph one pixel apart
-    ^S / ^O       save / open the document as a plain DOS 3.3 text
-                  file (readable markdown on disk): filename prompt on
-                  the status row, RETURN accepts, ESC cancels. Errors
-                  show "DISK ERROR n" and return to the editor; a
-                  missing file is detected before anything is touched
+    ^S            save as a plain DOS 3.3 text file (readable markdown
+                  on disk): filename prompt on the status row, RETURN
+                  accepts, ESC cancels. ".MD" is appended automatically
+                  so texr can recognize its own documents
+    ^O            file picker: lists the ".MD" text files on a drive
+                  (read straight from the DOS catalog with RWTS) in a
+                  modal box. ^J/^K or arrows move the highlight, RETURN
+                  loads, 1 / 2 switch drives (data disk in drive 2 is
+                  the default), ESC cancels. Disk errors show
+                  "DISK ERROR n" and return to the editor
     ^Q            quit: reboots the disk (after file I/O, DOS 3.3
                   cannot survive a BRUN program returning, so texr
                   restarts like most period application disks)
@@ -57,7 +62,9 @@ scrolling window into it, so files can be four screens tall. See
 
     bin/bootstrap.sh      check toolchain; offers to install what's missing
     bin/build.sh          assemble src/ and produce a bootable build/texr.dsk
-    bin/build_and_run.sh  build, then (re)boot the disk in Virtual ][
+    bin/build_and_run.sh  build, then (re)boot the disk in Virtual ][;
+                          also creates disks/data.dsk (once) and keeps
+                          it attached to drive 2 for ^S/^O
     bin/screen.sh         print the emulator's text screen to stdout
     bin/snap.sh [out]     save a PNG screenshot of the emulator screen
     bin/demos/            feature demos: markdown_render_demo.sh builds,
@@ -77,7 +84,11 @@ scrolling window into it, so files can be four screens tall. See
                           empty document (see splash screen hint)
     src/disk.s            ^S/^O DOS 3.3 text-file save/load, with a
                           patch-trap on DOS's error handler
+    src/catalog.s         ^O file picker: RWTS catalog scan + modal
+                          selection UI
     disks/template.dsk    bootable DOS 3.3 template (copied from System Master)
+    disks/data.dsk        persistent blank data disk in drive 2; never
+                          overwritten by builds, so saved docs survive
     tools/                AppleCommander CLI jar (downloaded by bootstrap)
     build/                outputs: texr.bin, texr.lst, texr.dsk
 
@@ -91,8 +102,11 @@ The generated `build/texr.dsk` boots DOS 3.3 and its `HELLO` greeting does
 can be transferred to a real floppy with ADTPro.
 
 Note: `bin/build.sh` recreates `build/texr.dsk` from the template, so
-documents saved with ^S live only until the next build. Copy the .dsk
-(or ADTPro it to a real floppy) to keep them.
+save documents to the drive-2 data disk instead: give ^S a filename
+like `NOTES,D2`. DOS remembers the drive, so later plain names keep
+using drive 2 until a `,D1` switches back. `disks/data.dsk` is created
+once and never touched by builds — documents there survive rebuilds,
+and the image can go to a real floppy with ADTPro.
 
 ## Memory notes
 
