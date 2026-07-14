@@ -26,6 +26,8 @@ DITGT   = $E7                   ; draw_items target: 0 = screen rows,
                                 ;   else document buffer lines
 SCRP    = $E8                   ; 2 bytes: cursor row's screen base
                                 ;   (LINEP now points into the buffer)
+GUTON   = $EA                   ; nonzero: line-number gutter shown
+                                ;   (display-only; buffer stays 40-wide)
 DSTP    = $CE                   ; 2 bytes: screen save/restore pointer
 FONTP   = DSTP                  ; 2 bytes: glyph source (never live at
                                 ;   the same time as a modal save)

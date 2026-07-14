@@ -49,15 +49,26 @@ becomes a scrolling 23-row window. Unlocks everything below.
       preview). Editor feels identical until a document outgrows the
       screen. Side benefit: the help modal repaints from the buffer,
       so SCRBUF and its save/restore code are gone.
-- [ ] **M13 — Real line semantics** — RETURN splits the line / inserts
-      a line; ^D at column 0 joins with the previous line.
-- [ ] **M14 — Line-number gutter (^N)** — toggleable 3-column inverse
-      gutter; display-only (buffer stays full-width).
+- [x] **M13 — Real line semantics** (Jul 2026) — RETURN splits the
+      line at the cursor (tail moves to a fresh inserted line; lines
+      below shift, line 98 falls off); RETURN on an empty list item
+      erases the marker and stays put; ^D at column 0 joins onto the
+      previous line with the cursor at the seam (refused when the two
+      lines don't fit in 40 columns; seam clamps to col 39 on a full
+      line).
+- [x] **M14 — Line-number gutter (^N)** (Jul 2026) — toggleable
+      3-column gutter (inverse 2-digit number + gap); document shows
+      at columns 3-39 while on, so the last 3 columns are hidden.
+      Display-only: the buffer stays full-width and typing/cursor
+      logic is untouched (cursor draw pins to the right edge).
 - [ ] **M15 — Disk save/load** — ^S save / ^O open as plain DOS 3.3
       text files (readable markdown on disk), filename prompt on the
       status row, trailing spaces stripped, long lines wrapped on load.
 
 ## Backlog / ideas
+
+- Smart wrap: typing past column 39 should split/flow onto the next
+  line instead of just hopping the cursor down
 
 - Inline `**bold**` / `*italic*` rendered via double-strike in ^P
 - Double-width h1 glyphs

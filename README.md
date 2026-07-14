@@ -17,17 +17,23 @@ scrolling window into it, so files can be four screens tall. See
 ## Editor keys
 
     ESC           help popup (ESC again closes; ctrl-? also opens on a //e)
-    RETURN        new line; on a "- " / "* " list item the next line
-                  auto-starts with the same marker, and RETURN on an
-                  empty item removes the marker and ends the list
+    RETURN        splits the line at the cursor (at column 0 this
+                  inserts a blank line above). On a "- " / "* " list
+                  item the next line auto-starts with the same marker,
+                  and RETURN on an empty item removes the marker and
+                  ends the list
     left/right    move cursor
     ^J / ^K       cursor down / up (also //e up/down arrows)
+    ^N            toggle the line-number gutter (display-only: the
+                  last 3 columns of each line are hidden while it's on)
     ^D            backspace: delete char left of cursor, pull line left.
-                  On a pristine (untouched) document, ^D instead loads
-                  a bundled demo showcasing every markdown feature.
-                  Pressing ^D to dismiss the splash screen goes straight
-                  into the editor with the demo already loaded — no
-                  need to dismiss the splash first
+                  At column 0 the line joins onto the end of the
+                  previous one (refused if the two don't fit in 40
+                  columns). On a pristine (untouched) document, ^D
+                  instead loads a bundled demo showcasing every
+                  markdown feature. Pressing ^D to dismiss the splash
+                  screen goes straight into the editor with the demo
+                  already loaded — no need to dismiss the splash first
     ^P            hi-res preview: renders the document at 280x192 with a
                   5x7 software font (ESC returns to the editor).
                   Markdown is rendered, not echoed:

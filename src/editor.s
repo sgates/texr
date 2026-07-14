@@ -27,6 +27,7 @@ editor_run:
         sta     CURCOL
         sta     CURROW
         sta     TOPLN
+        sta     GUTON
         jsr     docinit
         jsr     setline
         lda     KEYCH           ; ^D on the splash: straight to the demo
@@ -65,6 +66,9 @@ edloop: jsr     upd_status
 :       cmp     #$90            ; ^P hi-res preview
         bne     :+
         jmp     do_prev
+:       cmp     #$8E            ; ^N toggle line numbers
+        bne     :+
+        jmp     do_gut
 :       cmp     #$9B            ; ESC opens help
         bne     :+
         jmp     do_help
@@ -126,40 +130,76 @@ do_char:
         jsr     crlf
 @out:   jmp     edloop
 
-; --- RETURN, with markdown list continuation ------------------------
-; On a "- " / "* " item the next line auto-starts with the same
-; marker (if it's blank); on an empty item the marker is removed
-; instead, ending the list.
+; --- RETURN: split the line at the cursor (M13) ----------------------
+; The tail (cursor to col 39) moves to a fresh line inserted below;
+; lines under it shift down and line 98 falls off. Markdown lists
+; continue: RETURN at the end of a "- "/"* " item starts the next one
+; with the same marker, and RETURN on an empty item erases the marker
+; and stays put instead of inserting.
 do_cr:  ldy     #0
         lda     (LINEP),y
         cmp     #('-' | $80)
         beq     @mark
         cmp     #('*' | $80)
-        bne     @plain
-@mark:  ldy     #1
+        beq     @mark
+        lda     #0              ; no list marker
+        sta     TMP
+        beq     @split
+@mark:  sta     TMP             ; remember which marker
+        ldy     #1
         lda     (LINEP),y
         cmp     #$A0
-        bne     @plain
-        ldy     #2              ; any item text?
+        beq     @item
+        lda     #0              ; "-X..." is not a list item
+        sta     TMP
+        beq     @split
+@item:  ldy     #2              ; any item text?
 @rest:  lda     (LINEP),y
         cmp     #$A0
-        bne     @cont
+        bne     @split
         iny
         cpy     #40
         bne     @rest
-        lda     #$A0            ; empty item: erase marker, end list
+        lda     #$A0            ; empty item: erase marker, stay put
         ldy     #1
         sta     (LINEP),y
         dey
         sta     (LINEP),y
         jsr     blitline
-@plain: jsr     crlf
+        lda     #0
+        sta     CURCOL
         jmp     edloop
-@cont:  ldy     #0              ; remember which marker
-        lda     (LINEP),y
-        sta     TMP
-        jsr     crlf
-        ldy     #39             ; only take over a blank line
+
+@split: lda     TOPLN           ; current document line
+        clc
+        adc     CURROW
+        cmp     #DOCLINES-1     ; on the last line there's no room
+        bcc     :+
+        jmp     edloop
+:       adc     #1              ; carry clear: gap goes below us
+        sta     TMP2
+        jsr     ins_line
+        ldx     TMP2            ; DSTP = gap line - CURCOL, so the
+        lda     buflo,x         ; shared Y indexes src col CURCOL..39
+        sec                     ; onto dest col 0..
+        sbc     CURCOL
+        sta     DSTP
+        lda     bufhi,x
+        sbc     #0
+        sta     DSTP+1
+        ldy     CURCOL
+@tail:  lda     (LINEP),y       ; move the tail, blanking the source
+        sta     (DSTP),y
+        lda     #$A0
+        sta     (LINEP),y
+        iny
+        cpy     #40
+        bne     @tail
+        jsr     crlf            ; cursor onto the new line (may scroll)
+        jsr     redraw          ; everything below changed
+        lda     TMP             ; continue the list onto a blank line
+        beq     @done
+        ldy     #39
 @blank: lda     (LINEP),y
         cmp     #$A0
         bne     @done
@@ -248,20 +288,84 @@ do_help:
         jmp     edloop
 
 ; --- backspace: delete char left of cursor, pull line left ----------
-; Typing immediately after lands where the deleted text was. On a
-; pristine (0,0, all-blank) document, ^D instead loads the bundled
-; demo — see src/demo.s.
+; Typing immediately after lands where the deleted text was. At col 0
+; the line joins onto the end of the previous one (if the two fit in
+; 40 columns). On a pristine (0,0, all-blank) document, ^D instead
+; loads the bundled demo — see src/demo.s.
 do_del: lda     CURCOL
-        bne     :+
-        lda     CURROW          ; nothing left of col 0 (line join: M13)
-        ora     TOPLN           ; demo only at the true document top
-        bne     @noop
-        jsr     is_doc_empty
+        beq     :+
+        jmp     @char
+:       lda     CURROW          ; col 0: join, unless at document top
+        ora     TOPLN
+        bne     @join
+        jsr     is_doc_empty    ; top of doc: maybe load the demo
         beq     @fix
         jmp     load_demo
 @fix:   jsr     setline         ; is_doc_empty walked LINEP
 @noop:  jmp     edloop
-:       dec     CURCOL
+
+@join:  lda     TOPLN           ; TMP2 = current doc line (>= 1 here)
+        clc
+        adc     CURROW
+        sta     TMP2
+        tax
+        dex                     ; DSTP = previous line
+        lda     buflo,x
+        sta     DSTP
+        lda     bufhi,x
+        sta     DSTP+1
+        ldy     #39             ; TMP = previous line's length
+@plen:  lda     (DSTP),y
+        cmp     #$A0
+        bne     @pend
+        dey
+        bpl     @plen
+@pend:  iny
+        sty     TMP
+        ldy     #39             ; Y+1 = current line's length
+@clen:  lda     (LINEP),y
+        cmp     #$A0
+        bne     @cend
+        dey
+        bpl     @clen
+@cend:  iny
+        tya                     ; both must fit in 40 columns
+        clc
+        adc     TMP
+        cmp     #41
+        bcs     @noop
+        lda     #40             ; SAVCHR = columns free on prev line
+        sec
+        sbc     TMP
+        sta     SAVCHR
+        lda     DSTP            ; DSTP += prev len: dest of the copy
+        clc
+        adc     TMP
+        sta     DSTP
+        bcc     :+
+        inc     DSTP+1
+:       ldy     #0
+@copy:  cpy     SAVCHR          ; append current line after prev text
+        beq     @drop
+        lda     (LINEP),y
+        sta     (DSTP),y
+        iny
+        bne     @copy
+@drop:  jsr     del_line        ; close the gap (TMP2 still set)
+        lda     CURROW          ; cursor to the join seam
+        beq     @scrl
+        dec     CURROW
+        jmp     @seam
+@scrl:  dec     TOPLN           ; row 0: window slides up instead
+@seam:  lda     TMP             ; a full prev line puts the seam at
+        cmp     #40             ; 40 -- clamp to the last column
+        bcc     :+
+        lda     #39
+:       sta     CURCOL
+        jsr     redraw
+        jmp     edloop
+
+@char:  dec     CURCOL
         ldy     CURCOL
 @pull:  cpy     #39
         beq     @last
@@ -291,10 +395,109 @@ crlf:   lda     #0
         jmp     redraw          ; redraw ends in setline
 :       jmp     setline
 
+do_gut: lda     GUTON           ; ^N: toggle the line-number gutter
+        eor     #$01
+        sta     GUTON
+        jsr     redraw
+        jmp     edloop
+
 blitline:                       ; repaint the cursor row from its line
+        lda     GUTON
+        bne     @gut
         ldy     #39
 @col:   lda     (LINEP),y
         sta     (SCRP),y
+        dey
+        bpl     @col
+        rts
+@gut:   lda     TOPLN           ; inverse 2-digit number + gap, then
+        clc                     ; doc cols 0-36 at screen cols 3-39
+        adc     CURROW
+        adc     #1              ; 1-based line number
+        ldy     #0
+@tens:  cmp     #10
+        bcc     @ones
+        sbc     #10
+        iny
+        bne     @tens
+@ones:  pha
+        tya
+        beq     @blank          ; suppress leading zero
+        ora     #$30            ; inverse digit
+        bne     @tput
+@blank: lda     #$20            ; inverse space
+@tput:  ldy     #0
+        sta     (SCRP),y
+        pla
+        ora     #$30
+        iny
+        sta     (SCRP),y
+        iny
+        lda     #$A0            ; gap column
+        sta     (SCRP),y
+        lda     SCRP            ; DSTP = screen row + 3
+        clc
+        adc     #3
+        sta     DSTP
+        lda     SCRP+1
+        adc     #0
+        sta     DSTP+1
+        ldy     #36
+@gcol:  lda     (LINEP),y
+        sta     (DSTP),y
+        dey
+        bpl     @gcol
+        rts
+
+; --- buffer line ops (all clobber A, X, Y, SRCP, DSTP) ---------------
+ins_line:                       ; open a blank gap at doc line TMP2;
+        ldx     #DOCLINES-1     ; lines below shift down, 98 falls off
+@loop:  cpx     TMP2
+        beq     @gap
+        lda     buflo,x         ; copy line X-1 down into line X
+        sta     DSTP
+        lda     bufhi,x
+        sta     DSTP+1
+        dex
+        lda     buflo,x
+        sta     SRCP
+        lda     bufhi,x
+        sta     SRCP+1
+        jsr     copy40
+        jmp     @loop
+@gap:   jmp     blank_line
+
+del_line:                       ; delete doc line TMP2; lines below
+        ldx     TMP2            ; shift up, line 98 goes blank
+@loop:  cpx     #DOCLINES-1
+        beq     blank_line
+        lda     buflo,x         ; copy line X+1 up into line X
+        sta     DSTP
+        lda     bufhi,x
+        sta     DSTP+1
+        inx
+        lda     buflo,x
+        sta     SRCP
+        lda     bufhi,x
+        sta     SRCP+1
+        jsr     copy40
+        jmp     @loop
+
+blank_line:                     ; fill doc line X with spaces
+        lda     buflo,x
+        sta     DSTP
+        lda     bufhi,x
+        sta     DSTP+1
+        lda     #$A0
+        ldy     #39
+@col:   sta     (DSTP),y
+        dey
+        bpl     @col
+        rts
+
+copy40: ldy     #39             ; copy one line record (SRCP)->(DSTP)
+@col:   lda     (SRCP),y
+        sta     (DSTP),y
         dey
         bpl     @col
         rts
@@ -331,7 +534,7 @@ docinit:                        ; blank the whole document buffer
         rts
 
 cursor_on:                      ; show cursor: invert the screen cell
-        ldy     CURCOL          ; (display only; the buffer keeps the
+        jsr     curscr          ; (display only; the buffer keeps the
         lda     (SCRP),y        ;  real character)
         sta     SAVCHR
         and     #$3F
@@ -339,10 +542,21 @@ cursor_on:                      ; show cursor: invert the screen cell
         rts
 
 cursor_off:                     ; restore what was under it
-        ldy     CURCOL
+        jsr     curscr
         lda     SAVCHR
         sta     (SCRP),y
         rts
+
+curscr: ldy     CURCOL          ; Y = cursor's screen column: gutter
+        lda     GUTON           ; shifts it +3, pinned to the edge
+        beq     @done
+        iny
+        iny
+        iny
+        cpy     #40
+        bcc     @done
+        ldy     #39
+@done:  rts
 
 upd_status:                     ; live LN/COL readout (1-based)
         lda     TOPLN
@@ -405,14 +619,14 @@ help_items:
         .word   hlp_k4
         .byte   12,  6, hlp_k5 - hlp_kp
         .word   hlp_kp
-        .byte   13,  6, hlp_m1 - hlp_k5
+        .byte   13,  6, hlp_kn - hlp_k5
         .word   hlp_k5
-        .byte   15,  6, hlp_ml - hlp_m1
+        .byte   14,  6, hlp_m1 - hlp_kn
+        .word   hlp_kn
+        .byte   16,  6, hlp_ml - hlp_m1
         .word   hlp_m1
-        .byte   16,  6, hlp_m2 - hlp_ml
+        .byte   17,  6, hlp_esc - hlp_ml
         .word   hlp_ml
-        .byte   17,  6, hlp_esc - hlp_m2
-        .word   hlp_m2
         .byte   18, 14, hlp_esc_end - hlp_esc
         .word   hlp_esc
         .byte   19,  6, hlp_end - hlp_dm
@@ -430,15 +644,15 @@ boxmid: .byte   $20             ; inverse edges, clear interior
 
 hlp_t1: htext   "TEXR COMMANDS"
 hlp_t2: htext   "============="
-hlp_k1: htext   "RETURN    NEW LINE"
+hlp_k1: htext   "RETURN    SPLIT / NEW LINE"
 hlp_k2: htext   "ARROWS    MOVE LEFT / RIGHT"
 hlp_k3: htext   "^J / ^K   MOVE DOWN / UP"
-hlp_k4: htext   "^D        BACKSPACE"
+hlp_k4: htext   "^D        BACKSPACE / JOIN"
 hlp_kp: htext   "^P        HI-RES PREVIEW"
 hlp_k5: htext   "^Q        QUIT TO DOS"
+hlp_kn: htext   "^N        LINE NUMBERS ON/OFF"
 hlp_m1: htext   "--- ===   AUTO-FILL RULE LINE"
 hlp_ml: htext   "- OR *    LISTS AUTO-CONTINUE"
-hlp_m2: htext   "TYPING INSERTS AT THE CURSOR"
 hlp_esc:
         ftext   " ESC CLOSES "
 hlp_esc_end:
