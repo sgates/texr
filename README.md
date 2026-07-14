@@ -1,5 +1,8 @@
 # texr
 
+**[&#128214; User Manual](MANUAL.md)** — the full guide, written in
+period style (and in markdown, naturally).
+
 A markdown-first text editor for the Apple ][+ (48K + Language Card),
 written in 6502 assembly, cross-developed with cc65 and tested in
 Virtual ][ before going to real hardware via ADTPro.
@@ -60,6 +63,8 @@ scrolling window into it, so files can be four screens tall. See
 
 ## Layout
 
+    MANUAL.md             the user manual (period style)
+    milestones.md         shipped and planned feature log
     bin/bootstrap.sh      check toolchain; offers to install what's missing
     bin/build.sh          assemble src/ and produce a bootable build/texr.dsk
     bin/build_and_run.sh  build, then (re)boot the disk in Virtual ][;
